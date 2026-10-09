@@ -68,3 +68,4 @@ Thumbs.db
 .coverage
 htmlcov/
 keys/
+dbt/.user.yml

@@ -16,7 +16,7 @@ The outlier detection test (`tests/singular/detect_cost_outliers.sql`) is a **mo
 
 Pharmaceutical pricing naturally has high-cost outliers:
 
-1. **Specialty drugs:** Biologics, oncology, immunosuppressants ($1,000–$50,000+ per unit)
+1. **Specialty or high-cost drugs:** very expensive drugs (for example biologics or oncology products) can legitimately produce high cost values. Review flagged rows against the actual drug and claim counts rather than assuming they are errors.
 2. **Clinical variation:** Different patient populations drive different cost distributions
 3. **Real data:** High costs reflect legitimate healthcare economics, not data errors
 
