@@ -1,0 +1,368 @@
+version: 2
+
+sources:
+  - name: raw
+    database: PARTD_LAB
+    schema: RAW
+    description: Raw Medicare Part D data from CMS public data sources
+    config:
+      freshness:
+        warn_after: {count: 24, period: hour}
+        error_after: {count: 72, period: hour}
+    tables:
+      - name: prescriber_claims
+        description: |
+          Raw CMS Medicare Part D prescriber claims.
+          Source: data.cms.gov Prescribers by Provider and Drug dataset
+          Contains aggregate (non-PHI) metrics. Grain: one row per (prescriber NPI, state, drug).
+          Note: TOT_BENES is nullable by design (CMS suppression for <11 beneficiaries).
+        columns:
+          - name: PRSCRBR_NPI
+            description: National Provider Identifier (prescriber)
+            tests:
+              - not_null
+          - name: PRSCRBR_LAST_ORG_NAME
+            description: Prescriber last name or organization name
+          - name: PRSCRBR_FIRST_NAME
+            description: Prescriber first name
+          - name: PRSCRBR_CITY
+            description: Prescriber city
+          - name: PRSCRBR_STATE_ABRVTN
+            description: Prescriber state (2-letter abbreviation)
+            tests:
+              - not_null
+          - name: PRSCRBR_TYPE
+            description: Prescriber type (e.g., individual, organization)
+          - name: BRND_NAME
+            description: Brand name of prescribed drug
+            tests:
+              - not_null
+          - name: GNRC_NAME
+            description: Generic name of drug
+          - name: TOT_CLMS
+            description: Total number of claims for this prescriber-drug pair
+            tests:
+              - not_null
+              - positive_values
+          - name: TOT_30DAY_FILLS
+            description: Total 30-day prescription fills
+          - name: TOT_DAY_SUPLY
+            description: Total days of supply
+          - name: TOT_DRUG_CST
+            description: Total cost of drugs in USD
+            tests:
+              - not_null
+              - positive_values
+          - name: TOT_BENES
+            description: Total beneficiaries. Nullable due to CMS suppression for <11 beneficiaries.
+          - name: LOADED_AT
+            description: Timestamp when data was loaded
+          - name: LOADED_BY
+            description: User who loaded the data
+
+models:
+  - name: stg_prescriber_claims
+    description: |
+      Staging layer for prescriber claims.
+      Grain: one row per (prescriber_id, provider_state, drug).
+    columns:
+      - name: prescriber_id
+        description: Prescriber identifier (NPI)
+        tests:
+          - not_null
+      - name: provider_org_name
+        description: Prescriber organization or last name
+      - name: provider_first_name
+        description: Prescriber first name
+      - name: provider_city
+        description: Prescriber city
+      - name: provider_state
+        description: Prescriber state (2-letter abbreviation)
+        tests:
+          - not_null
+      - name: prescriber_type
+        description: Prescriber type (individual or organization)
+      - name: drug_brand_name
+        description: Brand name of prescribed drug
+        tests:
+          - not_null
+      - name: drug_generic_name
+        description: Generic name of drug
+      - name: claim_count
+        description: Total number of claims for this prescriber-drug pair
+        tests:
+          - not_null
+          - positive_values
+      - name: fills_30_day
+        description: Total 30-day prescription fills
+      - name: day_supply
+        description: Total days of supply
+      - name: drug_cost_usd
+        description: Total cost in USD
+        tests:
+          - not_null
+          - positive_values
+      - name: beneficiary_count
+        description: Total beneficiaries. Null if CMS suppressed (<11).
+      - name: source_loaded_at
+        description: Timestamp when raw record was loaded from CMS source
+      - name: dbt_inserted_at
+        description: Timestamp when this staging row was created
+
+  - name: int_specialty_drug_aggregates
+    description: Aggregated metrics by prescriber type and drug
+    columns:
+      - name: prescriber_type
+        description: Type of prescriber (individual or organization)
+      - name: drug_brand_name
+        description: Brand name of drug
+        tests:
+          - not_null
+      - name: drug_generic_name
+        description: Generic name of drug
+      - name: prescriber_count
+        description: Count of unique prescribers
+        tests:
+          - positive_values
+      - name: total_claims
+        description: Total claims for this drug
+        tests:
+          - positive_values
+      - name: total_fills
+        description: Total 30-day fills
+      - name: total_day_supply
+        description: Total days of supply
+      - name: total_cost_usd
+        description: Total cost in USD
+        tests:
+          - positive_values
+      - name: avg_cost_per_prescriber_usd
+        description: Average cost per prescriber
+      - name: min_cost_usd
+        description: Minimum cost
+      - name: max_cost_usd
+        description: Maximum cost
+
+  - name: int_state_drug_aggregates
+    description: Aggregated metrics by state and drug
+    columns:
+      - name: provider_state
+        description: Prescriber state (2-letter abbreviation)
+        tests:
+          - not_null
+      - name: drug_brand_name
+        description: Brand name of drug
+        tests:
+          - not_null
+      - name: drug_generic_name
+        description: Generic name of drug
+      - name: prescriber_count
+        description: Count of unique prescribers
+        tests:
+          - positive_values
+      - name: total_claims
+        description: Total claims for this drug
+        tests:
+          - positive_values
+      - name: total_cost_usd
+        description: Total cost in USD
+        tests:
+          - positive_values
+
+  - name: fct_cost_by_specialty_state
+    description: Fact table for cost analysis by prescriber type and state
+    columns:
+      - name: prescriber_type
+        description: Type of prescriber (individual or organization)
+      - name: provider_state
+        description: Prescriber state (2-letter abbreviation)
+        tests:
+          - not_null
+      - name: prescriber_count
+        description: Count of unique prescribers
+        tests:
+          - positive_values
+      - name: total_claims
+        description: Total claims
+        tests:
+          - positive_values
+      - name: total_cost_usd
+        description: Total cost in USD
+        tests:
+          - positive_values
+      - name: cost_per_prescriber
+        description: Average cost per prescriber
+        tests:
+          - positive_values
+      - name: unique_drugs
+        description: Count of unique drugs
+        tests:
+          - positive_values
+      - name: created_at
+        description: Timestamp when row was created
+
+  - name: fct_brand_vs_generic_share
+    description: Market share analysis by brand vs generic by prescriber type
+    columns:
+      - name: prescriber_type
+        description: Type of prescriber (individual or organization)
+      - name: drug_type
+        description: Brand or Generic classification
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['Brand', 'Generic']
+      - name: unique_drugs
+        description: Count of unique drugs
+        tests:
+          - positive_values
+      - name: total_claims
+        description: Total claims
+        tests:
+          - positive_values
+      - name: pct_of_claims
+        description: Percentage of total claims
+        tests:
+          - positive_values
+      - name: total_cost_usd
+        description: Total cost in USD
+        tests:
+          - positive_values
+      - name: pct_of_cost
+        description: Percentage of total cost
+        tests:
+          - positive_values
+
+  - name: fct_top_drugs_by_cost
+    description: Top 100 most expensive drugs by total cost
+    columns:
+      - name: rank
+        description: Rank of drug by total cost
+        tests:
+          - not_null
+      - name: drug_brand_name
+        description: Brand name of drug
+        tests:
+          - not_null
+      - name: drug_generic_name
+        description: Generic name of drug
+      - name: prescriber_count
+        description: Count of prescribers
+        tests:
+          - positive_values
+      - name: total_claims
+        description: Total claims
+        tests:
+          - positive_values
+      - name: total_cost_usd
+        description: Total cost in USD
+        tests:
+          - positive_values
+      - name: avg_cost_per_prescriber
+        description: Average cost per prescriber
+      - name: avg_cost_per_claim
+        description: Average cost per claim
+      - name: snapshot_date
+        description: Timestamp when row was created
+
+  - name: fct_opioid_prescribing_by_specialty
+    description: Opioid prescribing metrics by prescriber type for clinical monitoring
+    columns:
+      - name: prescriber_type
+        description: Type of prescriber (individual or organization)
+        tests:
+          - not_null
+      - name: drug_class
+        description: Opioid or Non-Opioid classification
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['Opioid', 'Non-Opioid']
+      - name: prescriber_count
+        description: Count of prescribers
+        tests:
+          - positive_values
+      - name: total_claims
+        description: Total claims
+        tests:
+          - positive_values
+      - name: pct_of_claims
+        description: Percentage of total claims
+      - name: total_cost_usd
+        description: Total cost in USD
+      - name: pct_of_cost
+        description: Percentage of total cost
+
+  - name: fct_prescriber_cost_trends
+    description: |
+      Incremental snapshot table: per-prescriber cost aggregates at each data load batch.
+      NOT a time trend — each row represents one (prescriber, state, type) for one data load.
+      To see trends over time, query multiple snapshots by source_loaded_at.
+    columns:
+      - name: prescriber_id
+        description: Prescriber identifier
+        tests:
+          - not_null
+      - name: provider_org_name
+        description: Prescriber organization or last name
+      - name: provider_first_name
+        description: Prescriber first name
+      - name: provider_state
+        description: Prescriber state
+        tests:
+          - not_null
+      - name: prescriber_type
+        description: Type of prescriber
+      - name: unique_drugs_prescribed
+        description: Count of unique drugs prescribed
+        tests:
+          - positive_values
+      - name: total_claims
+        description: Total claims for this prescriber in this load
+        tests:
+          - positive_values
+      - name: total_cost_usd
+        description: Total cost in USD for this prescriber in this load
+        tests:
+          - positive_values
+      - name: avg_drug_cost_usd
+        description: Average drug cost per prescription
+      - name: source_loaded_at
+        description: Timestamp when this batch of data was loaded from CMS source
+        tests:
+          - not_null
+      - name: dbt_updated_at
+        description: Timestamp when this snapshot was created in dbt
+
+  - name: dyn_top_drugs_by_state
+    description: Dynamic Table (auto-refreshing) for top 50 drugs by state
+    columns:
+      - name: provider_state
+        description: Prescriber state (2-letter abbreviation)
+        tests:
+          - not_null
+      - name: rank
+        description: Rank within state by total cost
+        tests:
+          - not_null
+      - name: drug_brand_name
+        description: Brand name of drug
+        tests:
+          - not_null
+      - name: drug_generic_name
+        description: Generic name of drug
+      - name: prescriber_count
+        description: Count of prescribers
+      - name: total_claims
+        description: Total claims
+      - name: total_cost_usd
+        description: Total cost in USD
+        tests:
+          - positive_values
+      - name: avg_cost_per_claim
+        description: Average cost per claim
+      - name: refresh_timestamp
+        description: Timestamp of last refresh
+

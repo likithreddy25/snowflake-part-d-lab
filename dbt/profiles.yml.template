@@ -1,0 +1,53 @@
+# Snowflake dbt profile template
+# Copy to ~/.dbt/profiles.yml and fill in with your environment variables
+# NEVER commit actual credentials to this file or the repo
+
+partd_analytics:
+  target: dev
+  outputs:
+    dev:
+      type: snowflake
+      account: "{{ env_var('SNOWFLAKE_ACCOUNT') }}"
+      user: "{{ env_var('SNOWFLAKE_USER') }}"
+      role: "{{ env_var('SNOWFLAKE_ROLE') }}"
+      warehouse: "{{ env_var('SNOWFLAKE_WAREHOUSE') }}"
+      database: "{{ env_var('SNOWFLAKE_DATABASE') }}"
+      schema: "STAGING"
+      threads: 4
+
+      # Authentication: use key-pair (preferred) or password
+      # Key-pair authentication:
+      private_key_path: "{{ env_var('SNOWFLAKE_PRIVATE_KEY_PATH') }}"
+      private_key_passphrase: "{{ env_var('SNOWFLAKE_PRIVATE_KEY_PASSPHRASE') }}"
+
+      # OR password authentication (set SNOWFLAKE_PASSWORD if using this):
+      # password: "{{ env_var('SNOWFLAKE_PASSWORD') }}"
+
+      # Optional: Snowflake-specific settings
+      application_name: "dbt_partd_analytics"
+      query_tag: "dbt_partd_{{ run_started_at.strftime('%Y%m%d_%H%M%S') }}"
+
+    prod:
+      type: snowflake
+      account: "{{ env_var('SNOWFLAKE_ACCOUNT') }}"
+      user: "{{ env_var('SNOWFLAKE_USER') }}"
+      role: "{{ env_var('SNOWFLAKE_ROLE') }}"
+      warehouse: "{{ env_var('SNOWFLAKE_WAREHOUSE') }}"
+      database: "{{ env_var('SNOWFLAKE_DATABASE') }}"
+      schema: "MARTS"
+      threads: 4
+      private_key_path: "{{ env_var('SNOWFLAKE_PRIVATE_KEY_PATH') }}"
+      private_key_passphrase: "{{ env_var('SNOWFLAKE_PRIVATE_KEY_PASSPHRASE') }}"
+      application_name: "dbt_partd_prod"
+
+# Instructions:
+# 1. Copy this file to ~/.dbt/profiles.yml
+# 2. Set environment variables:
+#    export SNOWFLAKE_ACCOUNT=your_account
+#    export SNOWFLAKE_USER=your_user
+#    export SNOWFLAKE_ROLE=PARTD_ENGINEER
+#    export SNOWFLAKE_WAREHOUSE=WH_PARTD
+#    export SNOWFLAKE_DATABASE=PARTD_LAB
+#    export SNOWFLAKE_PRIVATE_KEY_PATH=keys/your_user_private_key.p8
+#    export SNOWFLAKE_PRIVATE_KEY_PASSPHRASE=your_passphrase
+# 3. Run: dbt run

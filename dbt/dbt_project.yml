@@ -1,0 +1,49 @@
+name: 'partd_analytics'
+version: '1.0.0'
+config-version: 2
+
+profile: 'partd_analytics'
+
+model-paths: ['models']
+analysis-paths: ['analysis']
+test-paths: ['tests']
+seed-paths: ['data']
+macro-paths: ['macros']
+snapshot-paths: ['snapshots']
+target-path: 'target'
+clean-targets:
+  - 'target'
+  - 'dbt_packages'
+
+models:
+  partd_analytics:
+    staging:
+      +materialized: view
+      +schema: staging
+      +description: 'Cleaned, lightly transformed data tables'
+    intermediate:
+      +materialized: view
+      +schema: staging
+      +description: 'Intermediate aggregations for marts'
+    marts:
+      +materialized: table
+      +schema: marts
+      +description: 'Analytics-ready mart tables and dynamic tables'
+
+vars:
+  # Environment-controlled cost limits
+  max_warehouse_cost: 20  # credits, controlled by resource monitor
+  data_refresh_interval_minutes: 60  # Task schedule interval
+
+# On-run-start and on-run-end hooks
+on-run-start:
+  - "{{ log('Starting dbt run for Part D analytics', info=true) }}"
+
+on-run-end:
+  - "{{ log('dbt run completed', info=true) }}"
+
+require-dbt-version: [">=1.5.0"]
+
+seeds:
+  partd_analytics:
+    +schema: staging

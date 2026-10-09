@@ -1,0 +1,79 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  dbt-parse:
+    name: dbt Parse (No Snowflake Connection)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install dbt
+        run: |
+          pip install dbt-snowflake dbt-core --upgrade
+
+      - name: dbt Parse
+        run: |
+          cd dbt
+          dbt parse
+
+      - name: Validate dbt Project
+        run: |
+          cd dbt
+          dbt debug --target-path target
+
+  python-tests:
+    name: Python Tests (Data Download Script)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install requests pandas pytest pytest-cov --upgrade
+
+      - name: Run pytest
+        run: |
+          pytest tests/ -v --cov=scripts --cov-report=term-only
+
+  lint:
+    name: Lint & Code Quality
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install linters
+        run: |
+          pip install flake8 black isort
+
+      - name: Black format check
+        run: |
+          black --check scripts/ dbt/
+
+      - name: isort import sorting
+        run: |
+          isort --check-only scripts/ dbt/
+
+      - name: Flake8 linting
+        run: |
+          flake8 scripts/ dbt/ --max-line-length=100 --ignore=E203,E266,E501,W503
