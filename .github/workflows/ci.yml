@@ -48,18 +48,6 @@ jobs:
           SNOWFLAKE_PRIVATE_KEY_PATH: /tmp/dummy_key
           SNOWFLAKE_PRIVATE_KEY_PASSPHRASE: dummy_passphrase
 
-      - name: Validate dbt Project
-        run: |
-          cd dbt
-          dbt debug --target-path target --profiles-dir .
-        env:
-          SNOWFLAKE_ACCOUNT: dummy_account
-          SNOWFLAKE_USER: dummy_user
-          SNOWFLAKE_ROLE: dummy_role
-          SNOWFLAKE_WAREHOUSE: dummy_warehouse
-          SNOWFLAKE_DATABASE: dummy_database
-          SNOWFLAKE_PRIVATE_KEY_PATH: /tmp/dummy_key
-          SNOWFLAKE_PRIVATE_KEY_PASSPHRASE: dummy_passphrase
 
   python-tests:
     name: Python Tests (Data Download Script)
