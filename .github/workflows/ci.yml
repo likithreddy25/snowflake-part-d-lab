@@ -22,15 +22,44 @@ jobs:
         run: |
           pip install dbt-snowflake dbt-core --upgrade
 
+      - name: Set up dbt profiles
+        run: |
+          cd dbt
+          cp profiles.yml.template profiles.yml
+        env:
+          SNOWFLAKE_ACCOUNT: dummy_account
+          SNOWFLAKE_USER: dummy_user
+          SNOWFLAKE_ROLE: dummy_role
+          SNOWFLAKE_WAREHOUSE: dummy_warehouse
+          SNOWFLAKE_DATABASE: dummy_database
+          SNOWFLAKE_PRIVATE_KEY_PATH: /tmp/dummy_key
+          SNOWFLAKE_PRIVATE_KEY_PASSPHRASE: dummy_passphrase
+
       - name: dbt Parse
         run: |
           cd dbt
-          dbt parse
+          dbt parse --profiles-dir .
+        env:
+          SNOWFLAKE_ACCOUNT: dummy_account
+          SNOWFLAKE_USER: dummy_user
+          SNOWFLAKE_ROLE: dummy_role
+          SNOWFLAKE_WAREHOUSE: dummy_warehouse
+          SNOWFLAKE_DATABASE: dummy_database
+          SNOWFLAKE_PRIVATE_KEY_PATH: /tmp/dummy_key
+          SNOWFLAKE_PRIVATE_KEY_PASSPHRASE: dummy_passphrase
 
       - name: Validate dbt Project
         run: |
           cd dbt
-          dbt debug --target-path target
+          dbt debug --target-path target --profiles-dir .
+        env:
+          SNOWFLAKE_ACCOUNT: dummy_account
+          SNOWFLAKE_USER: dummy_user
+          SNOWFLAKE_ROLE: dummy_role
+          SNOWFLAKE_WAREHOUSE: dummy_warehouse
+          SNOWFLAKE_DATABASE: dummy_database
+          SNOWFLAKE_PRIVATE_KEY_PATH: /tmp/dummy_key
+          SNOWFLAKE_PRIVATE_KEY_PASSPHRASE: dummy_passphrase
 
   python-tests:
     name: Python Tests (Data Download Script)
@@ -49,7 +78,7 @@ jobs:
 
       - name: Run pytest
         run: |
-          pytest tests/ -v --cov=scripts --cov-report=term-only
+          pytest tests/ -v --cov=scripts --cov-report=term
 
   lint:
     name: Lint & Code Quality
@@ -72,7 +101,7 @@ jobs:
 
       - name: isort import sorting
         run: |
-          isort --check-only scripts/ dbt/
+          isort --profile black --check-only scripts/ dbt/
 
       - name: Flake8 linting
         run: |
