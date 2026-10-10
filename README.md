@@ -2,7 +2,7 @@
 
 A comprehensive data engineering portfolio project demonstrating **Snowflake**, **dbt**, **governance**, and **cost control** using public CMS Medicare Part D prescriber data.
 
-**Status:** Architecture and code complete. Results from actual execution will be added here.
+**Status:** Built and run end to end on a Snowflake trial account. Measured results are in the [Results](#results) section: dbt build PASS=72 WARN=1 ERROR=0, with row counts and cost.
 
 ---
 
@@ -11,7 +11,7 @@ A comprehensive data engineering portfolio project demonstrating **Snowflake**, 
 This project builds a modern data warehouse for healthcare analytics using:
 
 - **Snowflake** as the cloud data platform
-- **dbt** for ELT and testing (25+ tests, 1 incremental model, 1 Dynamic Table)
+- **dbt** for ELT and testing (62 data tests, 1 incremental model, 1 Dynamic Table)
 - **Governance** with dynamic masking, row access policies, and column tagging
 - **Cost control** via resource monitors, auto-suspend, and scheduled tasks
 - **CI/CD** with GitHub Actions (dbt parse + pytest)
@@ -71,7 +71,7 @@ This project builds a modern data warehouse for healthcare analytics using:
                        ▼
 ┌─────────────────────────────────────────────────────────────────┐
 │                    Analytics & BI (dbt + SQL)                    │
-│  ├─ 25+ tests (generic + singular reconciliation tests)          │
+│  ├─ 62 data tests (generic + singular reconciliation tests)      │
 │  ├─ Metrics (total_prescribers, total_claims, total_spend)      │
 │  └─ Optional: Streamlit dashboard for quick viz                 │
 └─────────────────────────────────────────────────────────────────┘
@@ -230,11 +230,12 @@ export SNOWFLAKE_PRIVATE_KEY_PASSPHRASE=your_passphrase
 ### Phase 3: Download Data (Terminal)
 
 ```bash
-# Download REAL CMS data (2024 dataset) via per-state sampling
-# Samples ~20K rows per state from 25+ states for geographic diversity (~500K total)
+# Download REAL CMS data (2024 dataset): first 20K rows per state for the first 25 states
+# alphabetically (AL to MO), in NPI order. Not a national or random sample (see Limitations).
 python scripts/download_cms_data.py
 
-# Output:
+# Example log format only. The counts below are illustrative, not the real run.
+# The measured numbers are in the Results section.
 # 2024-10-09 15:30:45 | INFO | Starting REAL CMS data download
 # 2024-10-09 15:30:45 | INFO | Fetching from 25+ states, 20000 rows per state
 # 2024-10-09 15:30:47 | INFO |   Fetching AL...
@@ -279,7 +280,7 @@ PUT file:///path/to/data/raw/cms_partd_YYYYMMDD_HHMMSS.csv @PARTD_LAB.RAW.STG_PA
 
 ```sql
 SELECT COUNT(*) as row_count FROM PARTD_LAB.RAW.PRESCRIBER_CLAIMS;
--- not run yet
+-- Expected: 500,000 (see Results for the measured reconciliation)
 ```
 
 ### Phase 5: Apply Governance Policies (Snowsight)
@@ -295,7 +296,7 @@ SELECT COUNT(*) as row_count FROM PARTD_LAB.RAW.PRESCRIBER_CLAIMS;
 ```sql
 USE ROLE PARTD_ENGINEER;
 SELECT NPI, PROVIDER_LAST_NAME FROM PARTD_LAB.RAW.PRESCRIBER_CLAIMS LIMIT 1;
--- Shows: 1234567890 | Smith
+-- Example of the expected shape: 1234567890 | Smith
 ```
 
 **Verify masking (as PARTD_ANALYST):**
@@ -303,7 +304,7 @@ SELECT NPI, PROVIDER_LAST_NAME FROM PARTD_LAB.RAW.PRESCRIBER_CLAIMS LIMIT 1;
 ```sql
 USE ROLE PARTD_ANALYST;
 SELECT NPI, PROVIDER_LAST_NAME FROM PARTD_LAB.RAW.PRESCRIBER_CLAIMS LIMIT 1;
--- Shows: NPI*** | ***MASKED***
+-- Example of the expected shape: hash pseudonym | ***MASKED***
 ```
 
 ### Phase 6: dbt ELT Pipeline (Terminal)
@@ -321,7 +322,7 @@ dbt debug
 # Run all models (staging + marts)
 dbt run
 
-# Run all tests (25+ generic + singular)
+# Run all tests (62 generic + singular data tests)
 dbt test
 
 # Generate documentation
@@ -480,7 +481,7 @@ Snowflake load reconciled exactly to downloader metadata:
 - 6 mart models (analytics-ready tables)
 - 1 incremental model (efficient delta loads)
 - 1 Dynamic Table (auto-refreshing metrics)
-- 25+ tests (generic, custom, singular reconciliation)
+- 62 data tests (generic, custom, singular reconciliation)
 - Documented models, columns, metrics
 
 ### ✅ **Governance**
@@ -496,7 +497,7 @@ Snowflake load reconciled exactly to downloader metadata:
 - **Incremental Models:** Only process new data
 - **Dynamic Tables:** Auto-refresh only if needed
 - **Scheduled Task:** Initially suspended (enable manually)
-- **Estimated Cost:** ~$2–6/month with this usage pattern
+- **Measured cost:** about 0.40 credits for the full run (see Cost Usage). Any monthly figure is an estimate
 
 ### ✅ **CI/CD**
 - GitHub Actions: dbt parse + pytest
@@ -569,19 +570,19 @@ dbt test --select test_type:singular --test-new-connection
 5. **Incremental Model Has No Trend Yet:** `fct_prescriber_cost_trends` is a snapshot table per load batch. Only one load batch exists, so it shows no time trend. Multiple loads over time would enable trend analysis.
 6. **Row Filtering:** Data cleaning drops rows with null critical columns (NPI, state, drug, claims) or non-positive claims. Beneficiary counts (TOT_BENES) are kept as NULL for <11 beneficiaries per CMS suppression policy (not a data quality issue). Metrics using beneficiary data must exclude NULL rows.
 7. **Governance Demo Only:** Dynamic masking is applied to RAW table only. Marts expose unmasked provider names and NPI. Merge task is suspended (not running live). This demonstrates governance mechanisms, not production-grade protection.
-8. **No BI Deployment:** Streamlit app code present but not deployed.
-9. **Simplified Models:** Opioid classification uses simple keyword matching, not clinical algorithms.
-10. **Code Authored with Claude:** This project was written with assistance from Claude (AI code generator).
+8. **Marts are aggregated fact tables, not a full star schema:** there are no dimension tables, and no dbt snapshots or slowly changing dimensions, so point-in-time history is not modelled.
+9. **No BI Deployment:** Streamlit app code present but not deployed.
+10. **Simplified Models:** Opioid classification uses simple keyword matching, not clinical algorithms.
+11. **Code Authored with Claude:** This project was written with assistance from Claude (AI code generator).
 
 ---
 
 ## Next Steps
 
-1. **Run the full pipeline** and paste actual results here
-2. **Monitor costs** via `docs/cost.md` queries
-3. **Extend marts** with your own analysis (e.g., geographic heatmaps, specialty trends)
-4. **Integrate BI tools** (Tableau, Looker, Power BI)
-5. **Scale to larger dataset** (adjust `MAX_RECORDS` in downloader)
+1. **Monitor costs** via `docs/cost.md` queries
+2. **Extend marts** with your own analysis (e.g., geographic heatmaps, specialty trends)
+3. **Integrate BI tools** (Tableau, Looker, Power BI)
+4. **Scale to a larger dataset** (adjust `MAX_RECORDS` in downloader)
 
 ---
 
@@ -628,7 +629,7 @@ dbt test --select test_type:singular --test-new-connection
 ## Code Quality
 
 - ✅ **2024 CMS Dataset:** Real data from verified CMS API (9552739e-3d05-4c1b-8eff-ecabf391e2e5)
-- ✅ **Per-State Sampling:** Downloads ~20K rows per state (25+ states) for geographic diversity, not just first N
+- ✅ **Per-State Sampling:** First 20K rows per state for 25 states (AL to MO). Not a national or random sample; see Limitations
 - ✅ **API Respect:** Polite delays between requests, respects max page size (50K rows), retries with backoff
 - ✅ **Data Validation:** Hard-fails if data shows <1,000 prescribers, <20 states, or <100 drugs
 - ✅ **Explicit Synthetic Mode:** Use `--synthetic` flag for test data (clearly marked SYNTHETIC)
@@ -666,5 +667,5 @@ MIT License — feel free to use this as a portfolio template.
 
 ## Questions?
 
-See [docs/](docs/) for detailed documentation. Check CI logs in [.github/workflows/](github/workflows/) for automated test results.
+See [docs/](docs/) for detailed documentation. Check CI logs in [.github/workflows/](.github/workflows/) for automated test results.
 
