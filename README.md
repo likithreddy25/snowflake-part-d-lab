@@ -2,7 +2,7 @@
 
 A comprehensive data engineering portfolio project demonstrating **Snowflake**, **dbt**, **governance**, and **cost control** using public CMS Medicare Part D prescriber data.
 
-**Status:** Built and run end to end on a Snowflake trial account. Measured results are in the [Results](#results) section: dbt build PASS=72 WARN=1 ERROR=0, with row counts and cost.
+**Status:** Built and run end to end on a Snowflake trial account. Measured results are in the [Results](#results) section: dbt test PASS=79 WARN=1 ERROR=0 (TOTAL=80), with row counts and cost.
 
 ---
 
@@ -11,7 +11,7 @@ A comprehensive data engineering portfolio project demonstrating **Snowflake**, 
 This project builds a modern data warehouse for healthcare analytics using:
 
 - **Snowflake** as the cloud data platform
-- **dbt** for ELT and testing (62 data tests, 1 incremental model, 1 Dynamic Table)
+- **dbt** for ELT and testing (78 data tests, 1 incremental model, 1 Dynamic Table, star schema + SCD2 snapshot)
 - **Governance** with dynamic masking, row access policies, and column tagging
 - **Cost control** via resource monitors, auto-suspend, and scheduled tasks
 - **CI/CD** with GitHub Actions (dbt parse + pytest)
@@ -71,7 +71,7 @@ This project builds a modern data warehouse for healthcare analytics using:
                        ▼
 ┌─────────────────────────────────────────────────────────────────┐
 │                    Analytics & BI (dbt + SQL)                    │
-│  ├─ 62 data tests (generic + singular reconciliation tests)      │
+│  ├─ 78 data tests (generic + singular reconciliation tests)      │
 │  ├─ Metrics (total_prescribers, total_claims, total_spend)      │
 │  └─ Optional: Streamlit dashboard for quick viz                 │
 └─────────────────────────────────────────────────────────────────┘
@@ -322,7 +322,7 @@ dbt debug
 # Run all models (staging + marts)
 dbt run
 
-# Run all tests (62 generic + singular data tests)
+# Run all tests (78 generic + singular data tests)
 dbt test
 
 # Generate documentation
@@ -380,7 +380,7 @@ streamlit run streamlit_app.py
 - **Rows Downloaded:** 500,000
 - **Unique Prescribers:** 20,252
 - **Unique States:** 25
-- **Unique Drugs:** 3,219
+- **Unique Drugs:** 1,952 distinct brand/generic pairs (1,913 brand names, 1,306 generic names). The downloader's metadata field `unique_drugs` shows 3,219, which is brand names plus generic names added together and double counts. Use the 1,952 figure
 - **Total Cost (USD):** $3,996,523,549.72
 - **Beneficiary Count (TOT_BENES):** 278,244 rows have NULL values (CMS suppression under 11 beneficiaries); kept as NULL per design
 - **Row Drop Tracking:** Logged to downloader metadata; per-column NaN counts captured before filtering
@@ -404,9 +404,9 @@ Snowflake load reconciled exactly to downloader metadata:
 
 ### dbt Build Results
 
-**Build Status: PASS=72 WARN=1 ERROR=0 SKIP=0 TOTAL=73**
+**Build Status (after the star-schema extension, latest run): PASS=79 WARN=1 ERROR=0 SKIP=0 TOTAL=80.** The first run, before the extension, was PASS=72 WARN=1 ERROR=0 TOTAL=73.
 
-- **62 Data Tests:** All passed (generic tests: not_null, unique, positive_values, accepted_values; singular tests: reconciliation, validation, outlier monitoring, grain checks)
+- **78 Data Tests:** All passed (generic tests: not_null, unique, positive_values, accepted_values; singular tests: reconciliation, validation, outlier monitoring, grain checks)
 - **Models:** 1 staging view, 2 intermediate views, 4 table models, 1 incremental model, 1 dynamic table
   - `stg_prescriber_claims` (staging view)
   - `int_specialty_drug_aggregates`, `int_state_drug_aggregates` (intermediate views)
@@ -468,6 +468,25 @@ Snowflake load reconciled exactly to downloader metadata:
 
 ---
 
+## Star Schema and SCD Type 2 (extension)
+
+Added on top of the original marts so the project also covers dimensional modeling and point-in-time history.
+
+| Object | Type | Grain |
+|---|---|---|
+| `dim_prescriber` | dimension (table) | one row per (prescriber_id, provider_state), surrogate `prescriber_key` |
+| `dim_drug` | dimension (table) | one row per (brand name, generic name), surrogate `drug_key` |
+| `fct_drug_claims` | fact (table) | one row per (prescriber_key, drug_key); keys plus measures only |
+| `snap_prescriber` | dbt snapshot, SCD Type 2 | one row per prescriber version, with `dbt_valid_from` / `dbt_valid_to` |
+
+- **Tests:** unique and not_null on both surrogate keys, `relationships` from the fact to each dimension, a grain check on the fact, and a reconciliation test (`reconcile_fct_drug_claims`) that compares fact row count, claims and cost with staging.
+- **Point-in-time query:** `dbt/analysis/prescriber_as_of.sql` returns each prescriber's attributes as of a given date from the snapshot.
+- **Row counts (measured):** `dim_prescriber` 20,252; `dim_drug` 1,952; `fct_drug_claims` 500,000 (equal to staging rows, enforced by the reconciliation test); `snap_prescriber` 20,252 (one version per prescriber).
+- **Status:** run on Snowflake with `dbt run --select dim_prescriber dim_drug fct_drug_claims`, `dbt snapshot`, then `dbt test`. The full test run finished with PASS=79 WARN=1 ERROR=0. The one warning is the existing `detect_cost_outliers` monitor. The 16 new data tests (keys, relationships, grain and fact-to-staging reconciliation) all passed.
+- **What the snapshot shows today:** one version per prescriber. History appears only after a later load changes a tracked column (organization name, first name, city or prescriber type).
+
+---
+
 ## Key Features
 
 ### ✅ **Data Warehouse**
@@ -481,7 +500,7 @@ Snowflake load reconciled exactly to downloader metadata:
 - 6 mart models (analytics-ready tables)
 - 1 incremental model (efficient delta loads)
 - 1 Dynamic Table (auto-refreshing metrics)
-- 62 data tests (generic, custom, singular reconciliation)
+- 78 data tests (generic, custom, singular reconciliation)
 - Documented models, columns, metrics
 
 ### ✅ **Governance**
@@ -570,7 +589,7 @@ dbt test --select test_type:singular --test-new-connection
 5. **Incremental Model Has No Trend Yet:** `fct_prescriber_cost_trends` is a snapshot table per load batch. Only one load batch exists, so it shows no time trend. Multiple loads over time would enable trend analysis.
 6. **Row Filtering:** Data cleaning drops rows with null critical columns (NPI, state, drug, claims) or non-positive claims. Beneficiary counts (TOT_BENES) are kept as NULL for <11 beneficiaries per CMS suppression policy (not a data quality issue). Metrics using beneficiary data must exclude NULL rows.
 7. **Governance Demo Only:** Dynamic masking is applied to RAW table only. Marts expose unmasked provider names and NPI. Merge task is suspended (not running live). This demonstrates governance mechanisms, not production-grade protection.
-8. **Marts are aggregated fact tables, not a full star schema:** there are no dimension tables, and no dbt snapshots or slowly changing dimensions, so point-in-time history is not modelled.
+8. **Star schema is an extension, and SCD2 history is empty so far:** the original six marts are still aggregated tables, and `fct_drug_claims` with its two dimensions sits beside them. `snap_prescriber` holds one version per prescriber, because the source data has not changed between loads.
 9. **No BI Deployment:** Streamlit app code present but not deployed.
 10. **Simplified Models:** Opioid classification uses simple keyword matching, not clinical algorithms.
 11. **Code Authored with Claude:** This project was written with assistance from Claude (AI code generator).

@@ -1,0 +1,53 @@
+version: 2
+
+models:
+  - name: dim_prescriber
+    description: "Prescriber dimension. Grain: one row per (prescriber_id, provider_state)."
+    columns:
+      - name: prescriber_key
+        description: Surrogate key (MD5 of prescriber_id and provider_state).
+        tests:
+          - unique
+          - not_null
+      - name: prescriber_id
+        description: Natural key (NPI).
+        tests:
+          - not_null
+      - name: provider_state
+        tests:
+          - not_null
+
+  - name: dim_drug
+    description: "Drug dimension. Grain: one row per (brand name, generic name)."
+    columns:
+      - name: drug_key
+        description: Surrogate key (MD5 of brand and generic name).
+        tests:
+          - unique
+          - not_null
+
+  - name: fct_drug_claims
+    description: "Claim-level fact table. Grain: one row per (prescriber_key, drug_key)."
+    columns:
+      - name: prescriber_key
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_prescriber')
+                field: prescriber_key
+      - name: drug_key
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_drug')
+                field: drug_key
+      - name: claim_count
+        tests:
+          - not_null
+          - positive_values
+      - name: drug_cost_usd
+        tests:
+          - not_null
+          - positive_values
